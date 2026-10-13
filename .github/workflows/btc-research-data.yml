@@ -1,0 +1,51 @@
+name: BTC research data
+
+on:
+  push:
+    branches: [research/btc-signal-study-v1]
+    paths:
+      - research/btc_signals/data.py
+      - research/btc_signals/test_data.py
+      - .github/workflows/btc-research-data.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: btc-research-data-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  acquire:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Test archive validation (offline)
+        run: python3 -m unittest discover -s research/btc_signals -p test_data.py -v
+      - name: Acquire public spot data and verify checksums
+        run: python3 research/btc_signals/data.py --out "${{ runner.temp }}/btc-research"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: btcusdt-1h-201912-202512-verified
+          path: ${{ runner.temp }}/btc-research/
+          if-no-files-found: error
+          retention-days: 7
+  application-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run test -w server
+      - run: npm run build -w server
+      - run: npm run build -w web
