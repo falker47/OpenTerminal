@@ -1,117 +1,143 @@
-# BTC Spot — specifica del primo incremento
+# BTC Spot — anomalie, spiegazioni e piani operativi
 
-Stato: **PROPOSTA DA REVISIONARE, NON IMPLEMENTATA**.
-Data: 13 ottobre 2026.
+Stato: **SPECIFICA REVISIONATA DA APPROVARE — NON IMPLEMENTATA, NESSUNA STRATEGIA VALIDATA**.
+Revisione: 2, 13 ottobre 2026.
 Repository: `falker47/OpenTerminal`.
-Baseline letta: `aed097c680cd8ec1c391ae06966babe7d6d91fc6`.
+Baseline applicativa riletta: `aed097c680cd8ec1c391ae06966babe7d6d91fc6`.
+Branch documentale: `docs/btc-spot-mvp-design`.
 Upstream: `ErTasselli/OpenTerminal`; licenza e attribuzioni restano inalterate.
 
-## 1. Risultato atteso
+## 1. Correzione del requisito
 
-Un simulatore manuale di vendita e successivo riacquisto di BTC già posseduti. Deve rispondere a: «A quale prezzo potrei riacquistare almeno la stessa quantità di BTC, considerando i costi dichiarati?». Non suggerisce quando operare, non stima la probabilità di un ribasso e non esegue ordini.
+La revisione del 13 ottobre sostituisce la proposta del simulatore manuale. Il prodotto deve osservare il mercato e individuare un evento anomalo quando si verifica, spiegarne le evidenze e proporre se vendere, acquistare o attendere, associando all'eventuale operazione un target per l'operazione opposta, un orizzonte temporale e condizioni d'invalidazione.
 
-L'obiettivo della prima iterazione è un calcolo verificabile e indipendente dai provider di mercato, non il completamento dell'intera dashboard finanziaria.
+La domanda centrale è: «È successo qualcosa che giustifica un'operazione? Perché? Quale sarebbe il piano di uscita o rientro e quando smette di essere valido?».
 
-## 2. Scelta architetturale proposta
+L'utente non deve inventare prezzi futuri per ottenere il risultato. Prezzo di riferimento, target e orizzonte derivano dal mercato e dal modello al momento del segnale. Il calcolo dei costi resta un controllo interno di convenienza dello scenario, non il prodotto principale.
 
-Aggiungere un widget isolato all'applicazione esistente, con un modulo di calcolo puro e test dedicati. Riutilizzare il contenitore dei widget, senza riscrivere il prodotto né modificare il registro delle operazioni.
+La prima proposta, conservata nella storia Git al commit `4fcb40b64c86fa36ca087f31dfc04839ffcdf4d0`, è superata. La presente revisione corregge il documento; non dimostra ancora capacità predittiva e non autorizza ordini o deployment.
 
-Alternative considerate: una nuova applicazione separata eviterebbe parte del codice ereditato ma duplicherebbe interfaccia e manutenzione; integrare subito il simulatore nel portafoglio lo accoppierebbe alla persistenza e a un modello contabile che oggi non registra commissioni. Il widget isolato mantiene piccolo e reversibile il primo intervento.
+## 2. Esperienza attesa
 
-I calcoli devono avvenire nel browser senza inviare gli input al server, all'assistente AI, a log o a servizi esterni. Il simulatore non introduce nuove richieste di rete. Gli altri widget mantengono il loro comportamento: questa specifica non rende offline l'intera applicazione.
-
-## 3. Input e convenzioni
-
-- Quantità di BTC da vendere: positiva, al massimo otto decimali; rappresenta solo la porzione simulata, non richiede il saldo totale.
-- Valuta di quotazione: scelta esplicita fra EUR, USD e USDT. Nessuna conversione automatica e nessuna equivalenza implicita fra USD e USDT.
-- Prezzo di vendita e prezzo ipotizzato di riacquisto: positivi, nella medesima valuta per BTC. Sono prezzi attesi di esecuzione, non quotazioni live.
-- Commissione percentuale di vendita e di acquisto: separate, esplicitamente indicate. Zero è ammesso ma deve restare visibile come assunzione.
-- Costi fissi di vendita e acquisto: non negativi, nella valuta di quotazione.
-- Accantonamento facoltativo: importo non negativo nella valuta di quotazione, da non reinvestire nella simulazione. È un vincolo di liquidità, non un calcolo delle imposte.
-
-Convenzione delle commissioni: quella di vendita viene dedotta dai ricavi; quella di acquisto è pagata nella valuta di quotazione in aggiunta al controvalore acquistato. Pagamenti delle commissioni in BTC o in token di terzi sono fuori scope: l'interfaccia deve avvertire che richiedono un modello diverso.
-
-Spread e slippage sono incorporati nei prezzi attesi di esecuzione inseriti dall'utente. Non sottrarli una seconda volta come costi separati. La prima versione non tenta di stimarli automaticamente.
-
-## 4. Modello matematico
-
-Siano:
-
-- `q`: BTC venduti;
-- `Ps`: prezzo atteso di vendita;
-- `Pb`: prezzo atteso di riacquisto;
-- `fs`, `fb`: commissioni frazionarie di vendita e acquisto, ciascuna in `[0, 1)`;
-- `Ks`, `Kb`: costi fissi di vendita e acquisto;
-- `R`: accantonamento facoltativo, distinto da costi e imposte effettive.
+Il flusso principale è:
 
 ```text
-Ricavi_lordi = q * Ps
-Commissione_vendita = Ricavi_lordi * fs
-Ricavi_netti_vendita = Ricavi_lordi - Commissione_vendita - Ks
-Budget_acquisto = Ricavi_netti_vendita - R - Kb
-BTC_teorici_riacquistabili = Budget_acquisto / (Pb * (1 + fb))
-Prezzo_pareggio_BTC = Budget_acquisto / (q * (1 + fb))
+Dati aggiornati -> anomalia -> spiegazione -> VENDERE / ACQUISTARE / ATTENDERE
+              -> target opposto + finestra temporale + invalidazione
+              -> monitoraggio del piano -> esito verificabile
 ```
 
-Un budget negativo o nullo blocca i risultati di riacquisto e mostra «Budget insufficiente con questi costi/accantonamenti». Non mostrare quantità negative, prezzi nulli utilizzabili o un segnale operativo.
+Un'unica scheda mostra strumento ed exchange, momento del rilevamento, prezzo di riferimento, fenomeno osservato, motivazione del segnale, evidenze contrarie, azione proposta, zona target, scadenza e stato della validazione. Non servono inizialmente saldo, quantità possedute o chiavi di trading.
 
-Usare aritmetica decimale verificabile. La quantità mostrata come riacquistabile è arrotondata per difetto a otto decimali, con indicazione della liquidità residua. Non usare un arrotondamento per eccesso che suggerisca più BTC di quelli finanziabili. Il prezzo di pareggio è una soglia teorica: tick size, quantità minima e limiti dell'exchange non sono modellati.
+La scheda deve poter suggerire esplicitamente una vendita spot seguita da riacquisto oppure un acquisto spot seguito da vendita. «Attendere» è un risultato motivato, non l'unica azione prevista dal prodotto. In fase sperimentale le stesse schede sono chiaramente etichettate come proposte da valutare in paper trading, senza confonderle con raccomandazioni validate.
 
-Gli importi originali e gli intermedi mantengono la precisione di calcolo; formattazione e arrotondamento di visualizzazione non devono alimentare nuovi calcoli.
+## 3. Dati e rilevamento tempestivo
 
-## 5. Output e confronto con mantenere BTC
+Separare sempre asset, valuta di quotazione, exchange e tipo di mercato. BTC/EUR, BTC/USD e BTC/USDT non sono intercambiabili. Per il prototipo è riutilizzabile il provider pubblico Binance BTC/USDT già presente, con etichetta esplicita; questo non presume l'exchange usato per operare. Prima dell'impiego operativo occorre allineare feed, coppia e costi alla sede effettiva di esecuzione.
 
-Mostrare ricavi lordi, commissioni, costi fissi, accantonamento e budget residuo separatamente. Poi mostrare:
+Proposta iniziale: acquisizione ogni 60 secondi, osservazioni su barre chiuse a 5 minuti e caratteristiche su finestre 1h, 4h e 24h, con contesto giornaliero. Il polling non garantisce latenza massima. Le barre ancora aperte possono alimentare un preavviso, ma non diventano evidenza storica definitiva. Intervallo delle candele e durata visualizzata nel grafico devono essere indipendenti.
 
-1. prezzo teorico di pareggio per recuperare la quantità venduta;
-2. ribasso percentuale necessario rispetto al prezzo atteso di vendita;
-3. BTC riacquistabili al prezzo ipotizzato, differenza assoluta e percentuale rispetto a `q`;
-4. eventuale liquidità residua dovuta all'arrotondamento.
+Ogni record porta timestamp del mercato, ricezione, fonte, coppia e stato di completezza. Verificare ordine temporale, duplicati, buchi, valori impossibili e discontinuità del provider prima di classificare un'anomalia di mercato. Un controllo indipendente, quando disponibile sulla stessa coppia o con conversione esplicita, distingue un movimento diffuso da un prezzo isolato; non sostituire silenziosamente la serie primaria.
 
-Il benchmark è conservare gli stessi `q` BTC, nello stesso intervallo ipotetico, senza operare. Eventuali BTC non venduti restano identici nei due scenari e non servono come input.
+Quotazioni vecchie oltre 60 secondi, barre mancanti, disallineamenti non risolti o assenza del warm-up richiesto bloccano nuovi suggerimenti operativi e producono «dati insufficienti/non aggiornati». Conservare l'ultimo dato per consultazione non significa poterlo usare per una nuova azione.
 
-La differenza di BTC non è un rendimento storico, una plusvalenza fiscale o un confronto completo di patrimonio dopo le imposte. Se esiste un accantonamento, mostrarlo separatamente: riduce il budget reinvestibile ma non è automaticamente denaro perso o imposta pagata. Evitare di presentare il risultato come «profitto netto fiscale».
+Per scaricare lo storico servono paginazione e rispetto dei limiti del provider. La documentazione Binance Spot indica al massimo 1.000 klines per richiesta; richieste oltre tale limite non sono una soluzione per ottenere sei mesi di dati.
 
-## 6. Esempi sintetici per l'accettazione
+## 4. Modello proposto: interpretabile e verificabile
 
-I seguenti importi sono inventati per verificare le formule; non sono quotazioni di mercato né dati di un portafoglio.
+L'approccio raccomandato è un modello quantitativo piccolo e spiegabile, accompagnato da contesto documentato. Un semplice alert percentuale non soddisfa il requisito del piano operativo; un modello linguistico lasciato libero di scegliere prezzi e probabilità non offre calcoli riproducibili. Eventuali modelli più complessi devono dimostrare un miglioramento rispetto alla baseline, non precederla per ragioni estetiche.
 
-Con `q = 0,01 BTC`, `Ps = 100.000`, commissioni `fs = fb = 0,1%`, nessun costo fisso e nessun accantonamento:
+Le caratteristiche iniziali candidate sono rendimento rispetto alla volatilità recente, rarità empirica del movimento, volume rispetto al proprio storico, distanza da riferimenti di prezzo e persistenza del trend. Usare pochi input, evitando di contare RSI, medie e altri indicatori correlati come prove indipendenti.
 
-- ricavi netti della vendita: `999` unità della valuta scelta;
-- prezzo teorico di pareggio: circa `99.800,1998002` per BTC;
-- con `Pb = 95.000`, quantità teorica: circa `0,01050528418949 BTC`, quantità conservativa: `0,01050528 BTC`;
-- con `Pb = 100.000` o `110.000`, i BTC riacquistabili sono inferiori a `0,01`;
-- senza alcun costo, riacquistando allo stesso prezzo si recupera esattamente `q`.
+Tenere distinti tre risultati: anomalia statistica, contesto/regime e convenienza dell'operazione. Un movimento raro non prova un errore di prezzo e non implica un'inversione. Una continuazione del trend deve poter prevalere sull'ipotesi di rientro verso la media e portare ad attendere, anche davanti a un forte rialzo o ribasso.
 
-Sono stati controllati separatamente con aritmetica decimale l'esempio, l'identità al pareggio e il peggioramento a prezzo invariato/in rialzo. Questi controlli matematici della specifica non sono test dell'applicazione.
+Soglie, finestre, caratteristiche e regole di conferma vanno dichiarate e versionate prima della valutazione finale. Non trasformare un percentile di rarità o un punteggio di anomalia in una probabilità di profitto. Non scegliere retroattivamente il modello che rende convincente l'evento appena osservato.
 
-## 7. UX e riservatezza
+## 5. Spiegare il perché senza inventare cause
 
-Widget leggibile anche su schermo stretto, con etichette italiane esplicite e un riepilogo compatto; errori associati ai rispettivi campi. Gestire correttamente l'inserimento decimale, evitando che stringhe vuote o parziali diventino zero in modo silenzioso.
+La spiegazione contiene due livelli separati:
 
-Il form iniziale non contiene saldi o prezzi reali. Un esempio dimostrativo, se presente, deve richiedere una scelta esplicita e restare etichettato come sintetico. In questa prima versione nessuna persistenza degli input, nessun import di transazioni e nessuna API key. Non aggiungere gli input allo stato persistito del layout, agli URL o a messaggi dell'assistente AI.
+- **Perché il sistema considera il movimento anomalo o interessante:** valori misurati, confronti storici, contesto del trend e condizioni che hanno attivato o bloccato il segnale.
+- **Quali eventi potrebbero aver contribuito al movimento:** notizie ed eventi pertinenti con fonte, momento dell'evento, pubblicazione e momento in cui erano disponibili al sistema.
 
-La dicitura permanente è: «Simulazione su ipotesi inserite. Non prevede il mercato, non calcola le imposte e non esegue ordini». Non utilizzare «compra», «vendi», semafori di convenienza o percentuali di probabilità come raccomandazione.
+Una notizia coincidente non dimostra causalità. Usare formulazioni come «evento concomitante» o «possibile contributo» quando questo è il livello dell'evidenza. Se non esiste una causa verificabile, scrivere «causa non confermata» senza inventare liquidazioni, flussi istituzionali o altri dati non acquisiti.
 
-## 8. Test e criteri di completamento dell'implementazione
+Mostrare anche le evidenze contrarie all'operazione. L'assenza di notizie non dimostra che il movimento sia ingiustificato. Se un input contestuale è necessario per una regola e manca, quella regola si astiene.
 
-Prima della UI, scrivere test del modulo di calcolo per: assenza di costi, commissioni asimmetriche, costi fissi, accantonamento, soglia di pareggio, riacquisto più caro, quantità frazionarie, arrotondamento e liquidità residua. Testare separatamente input vuoti, negativi, non finiti, percentuali fuori intervallo e budget insufficiente.
+La prima spiegazione deve funzionare con testo strutturato e fonti. Un assistente AI è facoltativo per sintetizzare evidenze già disponibili: non genera autonomamente target, probabilità, dati o nessi causali. Una sua indisponibilità non interrompe il nucleo quantitativo.
 
-Verificare le proprietà: a parità di altri input un costo maggiore non aumenta i BTC riacquistabili; un prezzo di riacquisto maggiore non aumenta la quantità; in assenza di costi fissi/accantonamento la soglia teorica di pareggio non dipende da `q`.
+## 6. Target e orizzonte generati dal segnale
 
-Aggiungere una prova d'integrazione del widget e un comando di test frontend eseguito dalla CI, non soltanto test eseguibili a mano. La CI attuale legge i test server e le build server/web: la sola build frontend non verifica il calcolo nuovo.
+Alla nascita del segnale congelare uno snapshot con prezzo osservato, intervallo d'ingresso ammissibile, target per l'operazione opposta, livello/condizione d'invalidazione, durata massima e ipotesi di costo. I prezzi sono nella valuta e sull'exchange esplicitati.
 
-Eseguire test server preesistenti, test nuovi, build server/web e una verifica browser desktop/mobile. Verificare nel browser che modificare il simulatore non invii gli input in rete e che il riavvio non li ripristini. Pubblicare una PR applicativa solo dopo verifiche locali disponibili; nessun merge o rilascio con controlli richiesti falliti o mancanti senza una decisione esplicita.
+La proposta metodologica è stimare scenari successivi a eventi storici comparabili, condizionati almeno a direzione, intensità e regime, usando solo informazioni disponibili prima dell'evento valutato. Volatilità, livelli osservati e distribuzioni degli esiti aiutano a costruire zone target; non sono garanzie che tali zone verranno raggiunte.
 
-## 9. Confini e fasi successive
+Gli orizzonti candidati iniziali sono 24, 48 e 72 ore, come proposta coerente con operazioni su più giornate, non come promessa temporale. La selezione dell'orizzonte e dei target fa parte del modello validato e deve essere congelata prima del test finale. Non usare per ogni evento l'orizzonte che funziona meglio guardando il futuro.
 
-Esclusi dal primo incremento: ordini automatici, exchange autenticati, short, leva, derivati, segnali predittivi, AI decisionale, motore fiscale, backtesting, deploy pubblico e modifiche dei dati SQLite esistenti.
+L'evento da stimare è «raggiungere il target prima dell'invalidazione ed entro l'orizzonte», non soltanto «chiudere più in alto/più in basso». Conteggiare anche mancati raggiungimenti e movimenti iniziali avversi. L'intervallo dei tempi calcolato solo sui successi va identificato come tale.
 
-Resta la direzione generale discussa per il fork: dashboard BTC dedicata, diario con costi e confronto storico con buy-and-hold. Questi sono incrementi successivi, non funzionalità dichiarate come già costruite. Alert e backtesting restano ulteriori estensioni, da valutare dopo qualità dei dati e contabilità.
+Mostrare probabilità numeriche solo se accompagnate da numerosità effettiva, periodo, metodo, incertezza e verifica di calibrazione fuori campione. In assenza di supporto sufficiente usare «probabilità non stimabile»; si può mostrare una zona tecnica sperimentale con la sua origine, senza attribuirle una confidenza fittizia. Nessun target credibile o margine insufficiente dopo i costi deve produrre «attendere».
 
-## 10. Stato del checkpoint
+La gestione del rischio, inclusa l'invalidazione, è parte del piano. Il sistema non sceglie autonomamente quale quota del patrimonio impiegare e non presenta i risultati come rendimento fiscale netto.
 
-Fork e accesso in scrittura verificati; `main` di partenza identificato. Questa modifica aggiunge soltanto la specifica su un branch separato. Nessun codice applicativo, dipendenza, workflow, dato di portafoglio o licenza modificati. Nessun deploy e nessuna connessione a exchange.
+## 7. Ciclo operativo e significato della scadenza
 
-La specifica richiede revisione prima di diventare il contratto dell'implementazione. Il prossimo artefatto, dopo la revisione, è il piano operativo del primo incremento con i file effettivi e le verifiche eseguibili. L'assenza di una run CI sul fork non equivale a CI verde.
+Supportare separatamente:
+
+- **SELL -> BUY:** vendita di BTC disponibili, poi possibile riacquisto. Se il prezzo continua a salire, rientrare più in alto può ridurre i BTC recuperabili; il fallimento del piano non viene nascosto aspettando indefinitamente.
+- **BUY -> SELL:** acquisto con liquidità disponibile, poi possibile vendita. Non consentire posizioni negative, prestiti o leva.
+
+L'azione suggerita non equivale a un'operazione eseguita. La UI distingue «solo osservato», «seguito in simulazione» ed eventuale conferma manuale di esecuzione. La disponibilità di BTC o liquidità, se non dichiarata, resta sconosciuta; il suggerimento esplicita la condizione senza presumere saldi.
+
+Il target si monitora **entro** la finestra, non soltanto dopo aver aspettato un numero fisso di giorni. Se viene raggiunto prima, avvisare subito; se arriva prima l'invalidazione o la scadenza, avvisare che il piano è invalidato o scaduto. La scadenza richiede una nuova valutazione, non un obbligo automatico di eseguire l'operazione opposta.
+
+Un segnale ha inoltre una propria validità d'ingresso, distinta dalla durata del piano. I valori di questa policy appartengono alla configurazione versionata del modello. Fuori dalla fascia d'ingresso o dopo la scadenza non presentare un vecchio segnale come attuale.
+
+Non spostare retroattivamente target, ingresso o durata per far risultare vincente un piano. Una revisione è un nuovo record collegato, con motivo e timestamp. Deduplicare alert per evento/stato e impedire piani concorrenti incompatibili sulla stessa porzione simulata.
+
+## 8. Backtest e verifica degli esiti sono nel primo incremento
+
+La valutazione è un requisito del nucleo, non una fase opzionale rimandata dopo grafici e calcolatore. Separare sviluppo, validazione cronologica e un periodo finale intatto; usare analisi walk-forward con separazione delle finestre sovrapposte all'orizzonte del segnale. Registrare anche le configurazioni scartate per non nascondere la selezione multipla.
+
+I backtest non possono usare candele future, notizie pubblicate dopo il segnale, livelli ricostruiti con dati successivi o prezzi di esecuzione non disponibili. Se manca uno storico contestuale affidabile, testare separatamente il nucleo quantitativo e verificare il livello news in paper trading; non attribuire al sistema completo il risultato del solo nucleo.
+
+Includere commissioni di entrambe le operazioni, spread e slippage con convenzioni esplicite, nessun doppio conteggio e analisi di sensibilità. Se target e invalidazione sono toccati nella stessa candela e l'ordine non è ricostruibile, usare dati più fini oppure un esito conservativo/indeterminato dichiarato. Nessun riempimento garantito al target; gestire gap e limiti di esecuzione.
+
+Misurare target raggiunto prima dell'invalidazione, scadenze, perdite, peggior movimento avverso, drawdown, numerosità effettiva e risultati per regime. Confrontare SELL -> BUY con mantenere gli stessi BTC e BUY -> SELL anche con rimanere liquidi, usando le stesse risorse iniziali. Mostrare sia patrimonio nella valuta quotata sia quantità BTC, compresa la valorizzazione dei piani ancora aperti: non selezionare soltanto operazioni chiuse in profitto.
+
+Il primo rilascio di ricerca genera proposte sperimentali, spiegazioni e piani monitorati senza denaro reale. La promozione a uso operativo richiede un rapporto fuori campione e una verifica prospettica, con criteri registrati prima della prova. Un rapporto può concludere che non c'è un vantaggio dimostrato: in quel caso mantenere lo strumento in ricerca, senza trasformare il risultato negativo in una promessa commerciale.
+
+## 9. Architettura e perimetro del primo incremento
+
+Riutilizzare l'applicazione esistente senza riscrivere il terminale:
+
+1. adapter dati e archivio locale di mercato con qualità/provenienza;
+2. motore puro di caratteristiche, segnali e piani, condiviso da replay storico e monitoraggio;
+3. servizio di spiegazione con evidenze e fonti;
+4. archivio append-only degli eventi e degli esiti, separato dai dati personali del portafoglio;
+5. widget BTC con scheda operativa, stato del piano e storico; alert persistenti nell'app.
+
+Il monitoraggio deve vivere nel processo backend e continuare senza la pagina aperta finché quel processo è attivo. Se PC/processo si spegne, il monitoraggio si interrompe: mostrarlo chiaramente. Recuperare lo storico al riavvio senza fingere che un alert scaduto sia stato consegnato in tempo.
+
+Notifiche esterne a telefono/browser richiedono un canale configurato e un servizio attivo: non sono automaticamente garantite dal fork o da questa specifica. Il canale esterno va verificato end-to-end prima di dichiarare alert affidabili a pagina chiusa; nessuna automazione ChatGPT è stata creata con questo documento.
+
+La prima implementazione deve percorrere l'intero flusso dati -> anomalia -> spiegazione -> proposta e piano sperimentale -> esito. Non sostituirlo nuovamente con una UI di prezzi manuali. Eventuali sotto-incrementi tecnici devono contribuire a quel flusso.
+
+## 10. Privacy, limiti e test
+
+Usare dati di mercato pubblici per rilevazione e backtest. Non committare saldi, operazioni personali, log privati, credenziali o archivi runtime. I dettagli di eventuali operazioni reali richiedono un opt-in separato alla persistenza; la ricerca funziona con contabilità sintetica. Nessun accesso autenticato all'exchange, nessun ordine automatico e nessun deployment pubblico in questa revisione.
+
+Testare: determinismo del replay; esclusione dei dati futuri; qualità e freschezza del feed; separazione USD/USDT/EUR; astensione per dati insufficienti; differenza tra anomalia e probabilità; costi e contabilità spot; target/invalidation/timeout nell'ordine corretto; mancata esecuzione; deduplicazione; ripartenza; spiegazioni senza fonti; benchmark e casi in perdita. Aggiungere verifica browser desktop/mobile e controlli di privacy/rete pertinenti.
+
+I test automatici del codice e le build non certificano profittabilità. Il rapporto statistico e i test ingegneristici sono artefatti distinti. Prima di un merge applicativo servono test e CI pertinenti verificati; la CI esistente si attiva su push a main e su pull request, non su ogni push documentale a questo branch.
+
+## 11. Fonti e stato della revisione
+
+Fonti consultate il 13 ottobre 2026, come motivazione metodologica e documentazione, non come validazione di una strategia attuale:
+
+- Binance Spot, Market Data: https://developers.binance.com/en/docs/catalog/core-trading-spot-trading/api/rest-api/market
+- Fidelity, RSI: https://www.fidelity.com/learning-center/trading-investing/technical-analysis/technical-indicator-guide/RSI — in trend forti le condizioni estreme possono persistere.
+- Liu e Tsyvinski, Risks and Returns of Cryptocurrency, NBER WP 24877 (2018; versione pubblicata 2021): https://www.nber.org/papers/w24877 — evidenza storica di momentum, non garanzia sui mercati correnti.
+- Novy-Marx, Backtesting Strategies Based on Multiple Signals, NBER WP 21329 (2015): https://www.nber.org/papers/w21329 — rischio di overfitting nella combinazione/selezione dei segnali.
+
+Questa revisione modifica soltanto la specifica sul branch documentale e sostituisce il precedente obiettivo. Nessun motore, feed, backtest, alert o modello predittivo è stato implementato o verificato in questo checkpoint. L'architettura e le proposte metodologiche richiedono revisione prima del piano esecutivo; la direzione del prodotto recepisce la correzione esplicita ricevuta.
