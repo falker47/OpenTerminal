@@ -1,0 +1,29 @@
+{
+  "data_sha256": "de110de0333525d14b46c287fc7fe20a1353ea2e40fcb5710c7c78ac13e590da",
+  "checks": {
+    "SELL_BUY_reference": {
+      "n": 24,
+      "mean_net_pct": -0.06181556263963467,
+      "compound_pct": -1.9795702379048623,
+      "gate_pass": false
+    },
+    "SELL_BUY_selected": {
+      "n": 29,
+      "mean_net_pct": -0.4054224714807457,
+      "compound_pct": -11.45504234865753,
+      "gate_pass": false
+    },
+    "BUY_SELL_reference": {
+      "n": 34,
+      "mean_net_pct": 0.4543440709570634,
+      "compound_pct": 15.89097982831951,
+      "gate_pass": false
+    },
+    "BUY_SELL_selected": {
+      "n": 42,
+      "mean_net_pct": -0.4221515157160294,
+      "compound_pct": -16.721851424873456,
+      "gate_pass": false
+    }
+  }
+}

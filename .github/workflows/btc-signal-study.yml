@@ -1,0 +1,80 @@
+name: BTC signal study
+
+on:
+  push:
+    branches: [research/btc-signal-study-v1]
+    paths:
+      - research/btc_signals/**
+      - .github/workflows/btc-signal-study.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: btc-signal-study-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  reproduce:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r research/btc_signals/requirements.txt
+      - name: Offline research tests
+        run: python -m unittest discover -s research/btc_signals -p 'test_*.py' -v
+      - name: Acquire and verify public source archives
+        run: python research/btc_signals/data.py --out "${{ runner.temp }}/btc-data"
+      - name: Replay E1 development and validation
+        run: python research/btc_signals/study.py --data "${{ runner.temp }}/btc-data" --out "${{ runner.temp }}/e1" --phase select
+      - name: Replay E2 selection before holdout
+        run: python research/btc_signals/run_e2.py --data "${{ runner.temp }}/btc-data" --out "${{ runner.temp }}/e2" --phase select
+      - name: Replay frozen E2 holdout
+        run: python research/btc_signals/run_e2.py --data "${{ runner.temp }}/btc-data" --out "${{ runner.temp }}/e2" --phase holdout
+      - name: Compare against recorded results
+        env:
+          E2_RESULTS: ${{ runner.temp }}/e2/holdout.json
+        run: |
+          python - <<'PY'
+          import json, os
+          expected=json.load(open('research/btc_signals/expected_e2.json'))
+          actual=json.load(open(os.environ['E2_RESULTS']))
+          assert actual['provenance']['data_sha256']==expected['data_sha256'], 'Source archives revised: investigate, do not accept a different dataset silently'
+          for key,want in expected['checks'].items():
+              got=actual['results'][key]
+              assert got['stats']['base']['n']==want['n'], key
+              assert abs(got['stats']['base']['mean_net_pct']-want['mean_net_pct'])<1e-10, key
+              assert abs(got['stats']['base']['compound_known_pct']-want['compound_pct'])<1e-9, key
+              assert got['paper_candidate_gate_pass']==want['gate_pass'], key
+          print('Recorded E2 results reproduced; no candidate promoted.')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: btc-signal-study-e1-e2
+          path: |
+            ${{ runner.temp }}/e1/
+            ${{ runner.temp }}/e2/
+            ${{ runner.temp }}/btc-data/manifest.json
+          retention-days: 30
+          if-no-files-found: error
+  application-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run test -w server
+      - run: npm run build -w server
+      - run: npm run build -w web
