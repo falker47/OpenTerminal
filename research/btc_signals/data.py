@@ -37,7 +37,7 @@ def parse_archive(raw: bytes, expected_hash: str) -> list[dict]:
             stamp, close_stamp = int(row[0]), int(row[6])
             unit = 1_000_000 if stamp >= 100_000_000_000_000 else 1000
             if stamp % (3600*unit) != 0 or close_stamp != stamp + 3600*unit-1:
-                raise ValueError('Invalid hourly open/close timestamp')
+                raise ValueError(f'Invalid hourly timestamp: file={members[0]} open={stamp} close={close_stamp} unit={unit}')
             vals = list(map(float, [*row[1:6], row[7], row[8], row[9], row[10]]))
             if not all(math.isfinite(x) for x in vals):
                 raise ValueError('Nonfinite market value')
@@ -92,8 +92,17 @@ def main() -> None:
     args = parser.parse_args()
     args.out.mkdir(parents=True,exist_ok=True)
     rawdir = args.out/'raw';rawdir.mkdir(exist_ok=True)
+    def inspected(month):
+        try:
+            return acquire_month(month,rawdir)
+        except Exception as exc:
+            return [], {'month':month,'error':str(exc)}
     with ThreadPoolExecutor(max_workers=3) as pool:
-        parts = list(pool.map(lambda m:acquire_month(m,rawdir),months()))
+        parts = list(pool.map(inspected,months()))
+    errors = [meta for _,meta in parts if 'error' in meta]
+    if errors:
+        print(json.dumps({'acquisition_errors':errors},indent=2),flush=True)
+        raise RuntimeError(f'{len(errors)} monthly archive(s) failed validation; no dataset accepted')
     allrows = [r for rows,_ in parts for r in rows]
     stamps = [r['time'] for r in allrows]
     if stamps != sorted(set(stamps)):
