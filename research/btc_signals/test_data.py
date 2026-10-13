@@ -31,4 +31,20 @@ class DataTests(unittest.TestCase):
     def test_invalid_taker(self):
         row=sample();row[9]='11';raw,sha=packed([row])
         with self.assertRaises(ValueError): parse_archive(raw,sha)
+    def test_irregular_close_strict(self):
+        row=sample(1582110000000);row[6]=1582112132286
+        raw,sha=packed([row])
+        with self.assertRaises(ValueError): parse_archive(raw,sha)
+    def test_quarantine_irregular_close_without_rewriting(self):
+        bad=sample(1582110000000);bad[6]=1582112132286
+        good=sample(1582113600000);raw,sha=packed([bad,good]);quarantine=[]
+        result=parse_archive(raw,sha,quarantine=quarantine)
+        self.assertEqual([r['time'] for r in result],[1582113600])
+        self.assertEqual(len(quarantine),1)
+        self.assertEqual(quarantine[0]['source_row'][6],str(bad[6]))
+    def test_quarantine_close_before_open(self):
+        bad=sample(1608559200000);bad[6]=1608558440521
+        good=sample(1608562800000);raw,sha=packed([bad,good]);q=[]
+        result=parse_archive(raw,sha,quarantine=q)
+        self.assertEqual(len(result),1);self.assertEqual(len(q),1)
 if __name__=='__main__': unittest.main()

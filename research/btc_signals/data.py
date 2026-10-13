@@ -22,11 +22,12 @@ FIELDS = ['time', 'open', 'high', 'low', 'close', 'volume', 'quote_volume',
           'trades', 'taker_buy_base', 'taker_buy_quote']
 
 
-def parse_archive(raw: bytes, expected_hash: str) -> list[dict]:
+def parse_archive(raw: bytes, expected_hash: str, quarantine: list | None = None) -> list[dict]:
     """Verify the archive and reject malformed/duplicate/nonfinite candles."""
     if hashlib.sha256(raw).hexdigest() != expected_hash.lower():
         raise ValueError('SHA256 checksum mismatch')
     rows = []
+    previous_stamp = None
     with zipfile.ZipFile(io.BytesIO(raw)) as z:
         members = z.namelist()
         if len(members) != 1 or not members[0].endswith('.csv'):
@@ -36,8 +37,17 @@ def parse_archive(raw: bytes, expected_hash: str) -> list[dict]:
                 raise ValueError('Expected 12 Binance kline fields')
             stamp, close_stamp = int(row[0]), int(row[6])
             unit = 1_000_000 if stamp >= 100_000_000_000_000 else 1000
+            normalized_stamp = stamp//unit
+            if previous_stamp is not None and normalized_stamp <= previous_stamp:
+                raise ValueError('Duplicate or out-of-order source timestamp')
+            previous_stamp = normalized_stamp
             if stamp % (3600*unit) != 0 or close_stamp != stamp + 3600*unit-1:
-                raise ValueError(f'Invalid hourly timestamp: file={members[0]} open={stamp} close={close_stamp} unit={unit}')
+                detail = {'member': members[0], 'source_row': row,
+                          'reason': 'irregular open/close timestamp; excluded, not repaired'}
+                if quarantine is None:
+                    raise ValueError(str(detail))
+                quarantine.append(detail)
+                continue
             vals = list(map(float, [*row[1:6], row[7], row[8], row[9], row[10]]))
             if not all(math.isfinite(x) for x in vals):
                 raise ValueError('Nonfinite market value')
@@ -77,13 +87,15 @@ def acquire_month(month: str, out: Path) -> tuple[list[dict], dict]:
     raw = download(BASE+name)
     check = download(BASE+name+'.CHECKSUM').decode('ascii')
     expected = check.split()[0]
-    rows = parse_archive(raw, expected)
+    quarantine = []
+    rows = parse_archive(raw, expected, quarantine=quarantine)
     if any(datetime.fromtimestamp(r['time'],timezone.utc).strftime('%Y-%m') != month for r in rows):
         raise ValueError(f'Wrong date inside {name}')
     (out/name).write_bytes(raw)
     (out/(name+'.CHECKSUM')).write_text(check,encoding='ascii')
     return rows, {'month':month, 'url':BASE+name, 'sha256':expected,
-                  'rows':len(rows), 'first':rows[0]['time'], 'last':rows[-1]['time']}
+                  'rows':len(rows), 'first':rows[0]['time'], 'last':rows[-1]['time'],
+                  'quarantined':quarantine}
 
 
 def main() -> None:
@@ -116,6 +128,7 @@ def main() -> None:
                 'acquired_at':datetime.now(timezone.utc).isoformat(),
                 'months':[meta for _,meta in parts], 'rows':len(allrows),
                 'first':stamps[0], 'last':stamps[-1], 'gaps':gaps,
+                'quarantined_rows':sum(len(m['quarantined']) for _,m in parts),
                 'zero_volume_rows':sum(r['volume']==0 for r in allrows),
                 'csv_sha256':hashlib.sha256(target.read_bytes()).hexdigest(),
                 'policy':'No gap imputation; downstream studies must exclude windows crossing gaps.'}
